@@ -88,7 +88,8 @@ const GENDERS = ["Male", "Female", "Non-binary", "Other", "Custom"];
 const BACKGROUND_CATEGORIES = {
   "PHB (2024)": ["Acolyte", "Charlatan", "Criminal", "Entertainer", "Farmer", "Guard", "Guide", "Hermit", "Merchant", "Noble", "Outlander", "Sage", "Sailor", "Soldier", "Wayfarer"],
   "Sword Coast": ["City Watch", "Clan Crafter", "Cloistered Scholar", "Courtier", "Far Traveler", "Inheritor", "Knight of the Order", "Mercenary Veteran", "Urban Bounty Hunter", "Uthgardt Tribe Member", "Waterdhavian Noble"],
-  "Eberron/Faerun": ["House Agent", "Faction Agent", "Smuggler", "Shipwright", "Fisher", "Marine"],
+  "Eberron": ["Agent of Cannith", "Agent of Deneith", "Agent of Ghallanda", "Agent of Jorasco", "Agent of Kundarak", "Agent of Lyrandar", "Agent of Medani", "Agent of Orien", "Agent of Phiarlan", "Agent of Sivis", "Agent of Tharashk", "Agent of Thuranni", "Agent of Vadalis"],
+  "Faerun": ["Harper Agent", "Order of the Gauntlet", "Emerald Enclave", "Lords' Alliance", "Zhentarim Agent", "Smuggler", "Shipwright", "Fisher", "Marine"],
   "Astral/Planar": ["Astral Drifter", "Wildspacer", "Gate Warden", "Planar Philosopher"],
   "Epic/Specific": ["Knight of Solamnia", "Mage of High Sorcery", "Giant Foundling", "Rune Carver", "Silverquill Student", "Lorehold Student", "Prismari Student", "Quandrix Student", "Witherbloom Student"]
 };
@@ -237,7 +238,7 @@ const App = () => {
   const [slagLevel, setSlagLevel] = useState("Random");
   const [slagSetting, setSlagSetting] = useState("Random");
   const [isEditingName, setIsEditingName] = useState(false);
-  
+   
   const recordRef = useRef(null);
   const fileInputRef = useRef(null);
   const artUploadRef = useRef(null);
@@ -281,6 +282,15 @@ const App = () => {
 
   const updateFormVal = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
   const updateManualStat = (stat, val) => setFormData(p => ({ ...p, manualStats: { ...p.manualStats, [stat]: parseInt(val) || 10 } }));
+  const handleNameChange = (val) => {
+    setFormData(prev => ({ ...prev, name: val }));
+    if (character) {
+      setCharacter(prev => ({
+        ...prev,
+        coreIdentity: { ...prev.coreIdentity, name: val }
+      }));
+    }
+  };
   const nextStep = () => setStep(s => s + 1);
   const prevStep = () => setStep(s => s - 1);
 
@@ -387,16 +397,46 @@ const App = () => {
     if (!character) return;
     setLoadingMessage("Casting Vision..."); setLoading(true); setError(null);
     try {
-      const dossier = `Portrait Dossier: ${character.coreIdentity?.name}, ${character.coreIdentity?.species} ${character.coreIdentity?.className}. World: ${formData.setting}. Origin: ${character.backgroundStory}. Traits: ${character.description}. Style: ${formData.artStyle}. Feedback: ${formData.artTweaks}`;
+      // Enhanced Contextual Data Extraction
+      const identity = character.coreIdentity || {};
+      const contextData = {
+        name: identity.name || "Unknown",
+        species: identity.species || formData.species,
+        gender: identity.gender || formData.gender,
+        class: identity.className || formData.className,
+        background: identity.background || formData.background,
+        setting: formData.setting,
+        appearance: character.description || "No description available.",
+        backstory: character.backgroundStory || "No backstory available.",
+        style: formData.artStyle,
+        tweaks: formData.artTweaks
+      };
+
+      const systemPrompt = `You are an expert Fantasy Art Director for D&D. 
+      Generate 3 distinct, highly detailed image generation prompts based on this character profile.
+      
+      STRICT REQUIREMENTS:
+      1. SUBJECT: ${contextData.gender} ${contextData.species} ${contextData.class}.
+      2. SETTING: ${contextData.setting}. Ensure background elements reflect this world.
+      3. APPEARANCE: Use specific details from: "${contextData.appearance}".
+      4. STYLE: ${contextData.style}.
+      5. DETAILS: Include specific class equipment, background hints (${contextData.background}), and atmospheric lighting.
+      6. OUTPUT: Return ONLY a valid JSON array of 3 strings.
+      
+      Profile Context:
+      ${JSON.stringify(contextData)}
+      `;
+
       let prompts;
       if (uploadedRef) {
-        const res = await callGemini(`${dossier}. Use image for composition. Generate 3 prompts as JSON array.`, "Concept Artist.", true, uploadedRef);
+        const res = await callGemini(`Analyze the reference image and the character profile. Generate 3 prompts blending the reference composition with the character details. Output JSON array.`, systemPrompt, true, uploadedRef);
         prompts = JSON.parse(res.replace(/```json|```/g, '').trim());
       } else {
-        const res = await callGemini(dossier, `Generate 3 image prompts as JSON array.`, true);
+        const res = await callGemini(`Generate 3 detailed prompts for this character. Output JSON array.`, systemPrompt, true);
         prompts = JSON.parse(res.replace(/```json|```/g, '').trim());
       }
-      const imgs = await Promise.all(prompts.slice(0, 3).map(p => generateCharacterImage(`${formData.artStyle !== "Custom" ? formData.artStyle + ' style, ' : ''}${p}`)));
+      
+      const imgs = await Promise.all(prompts.slice(0, 3).map(p => generateCharacterImage(p)));
       setImageChoices(imgs); setStep(9);
     } catch (err) { setError(`Vision failed: ${err.message}`); } finally { setLoading(false); }
   };
@@ -444,8 +484,8 @@ const App = () => {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-orange-500/30">
       <header className="py-8 text-center no-print">
         <div className="inline-block px-12 py-4 border-4 border-zinc-900 bg-zinc-900 shadow-2xl rounded-sm">
-           <h1 className="text-6xl md:text-7xl font-black tracking-tighter uppercase italic text-orange-500 drop-shadow-[0_0_15px_rgba(255,165,0,0.5)]">SlagHeap</h1>
-           <p className="text-xs font-bold tracking-[0.3em] uppercase mt-2 text-zinc-500 font-black">Salvaging legends from the foundry floor</p>
+            <h1 className="text-6xl md:text-7xl font-black tracking-tighter uppercase italic text-orange-500 drop-shadow-[0_0_15px_rgba(255,165,0,0.5)]">SlagHeap</h1>
+            <p className="text-xs font-bold tracking-[0.3em] uppercase mt-2 text-zinc-500 font-black">Salvaging legends from the foundry floor</p>
         </div>
       </header>
 
@@ -475,7 +515,7 @@ const App = () => {
                   <div className="flex items-center gap-4 mb-2 font-black italic uppercase"><Sword size={48} className="text-zinc-400 group-hover:text-blue-400" /><h3 className="text-4xl tracking-tight italic">Fresh Ore</h3></div>
                 </button>
                 <div className="relative group overflow-hidden bg-gradient-to-br from-orange-600 via-orange-700 to-red-900 border-2 border-orange-500 rounded-3xl transition-all shadow-2xl flex flex-col">
-                   <div className="flex items-stretch">
+                    <div className="flex items-stretch">
                       <div className="w-28 flex flex-col items-center justify-center bg-black/20 hover:bg-black/40 cursor-pointer border-r border-white/10">
                         <label className="text-[9px] text-orange-200 uppercase tracking-widest mb-1 opacity-60 font-black italic">World</label>
                         <select value={slagSetting} onChange={(e) => setSlagSetting(e.target.value)} className="bg-transparent text-white font-black text-xs outline-none cursor-pointer appearance-none px-2 text-center uppercase tracking-tighter italic">
@@ -493,7 +533,7 @@ const App = () => {
                           {Array.from({ length: 20 }).map((_, i) => (<option key={i+1} value={i+1} className="bg-zinc-900 italic font-black">{i+1}</option>))}
                         </select>
                       </div>
-                   </div>
+                    </div>
                 </div>
               </div>
             )}
@@ -501,9 +541,9 @@ const App = () => {
             {view === 'library' && (
               <ScreenWrapper title="Archives">
                 <div className="flex gap-4 mb-8 justify-center text-white font-black uppercase italic">
-                   <button onClick={() => { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(savedCharacters)); const dlAnchor = document.createElement('a'); dlAnchor.setAttribute("href", dataStr); dlAnchor.setAttribute("download", `Archive_Export.json`); dlAnchor.click(); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-orange-500 transition-all text-zinc-400 text-xs"><Download size={16} /> Export JSON</button>
-                   <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-orange-500 transition-all text-zinc-400 text-xs"><Upload size={16} /> Import JSON</button>
-                   <input type="file" ref={fileInputRef} onChange={(e) => { 
+                    <button onClick={() => { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(savedCharacters)); const dlAnchor = document.createElement('a'); dlAnchor.setAttribute("href", dataStr); dlAnchor.setAttribute("download", `Archive_Export.json`); dlAnchor.click(); }} className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-orange-500 transition-all text-zinc-400 text-xs"><Download size={16} /> Export JSON</button>
+                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-orange-500 transition-all text-zinc-400 text-xs"><Upload size={16} /> Import JSON</button>
+                    <input type="file" ref={fileInputRef} onChange={(e) => { 
                       const file = e.target.files[0]; if (!file || !user) return; const reader = new FileReader(); 
                       reader.onload = async (event) => { 
                         try { 
@@ -515,7 +555,7 @@ const App = () => {
                         } catch (err) { setError("Import failed."); setLoading(false); } 
                       }; 
                       reader.readAsText(file); 
-                   }} accept=".json" className="hidden" />
+                    }} accept=".json" className="hidden" />
                 </div>
                 <div className="grid gap-4">
                   {savedCharacters.map(char => (
@@ -541,7 +581,7 @@ const App = () => {
                   </ScreenWrapper>
                 )}
                 {step === 2 && (
-                   <ScreenWrapper title="World" subtitle="Select Setting">
+                    <ScreenWrapper title="World" subtitle="Select Setting">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-white font-black italic uppercase">
                       {SETTINGS.map(s => (
                         <button key={s} onClick={() => { updateFormVal('setting', s); nextStep(); }} className="aspect-square flex items-center justify-center p-8 rounded-3xl border-4 border-zinc-800 hover:border-orange-500 hover:bg-orange-500/5 transition-all text-xl italic tracking-tighter text-center">{s}</button>
@@ -586,11 +626,11 @@ const App = () => {
                 {step === 6 && (
                   <ScreenWrapper title="Expertise" subtitle={`${formData.className} Skills`}>
                     <div className="space-y-8 text-white font-black italic uppercase text-left">
-                       <div className="mb-4 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                        <div className="mb-4 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl">
                           <label className="text-[10px] text-orange-500 mb-2 block tracking-widest font-black uppercase italic">Background Proficiencies</label>
                           <div className="flex flex-wrap gap-2 text-zinc-900 font-black italic uppercase">{(BACKGROUND_DATA[formData.background]?.skills || []).map(s => (<span key={s} className="px-3 py-1 bg-orange-500/10 border border-orange-500/40 rounded-lg text-[10px] text-orange-200 flex items-center gap-1.5 shadow-sm"><Lock size={10} /> {s}</span>))}</div>
-                       </div>
-                       <div>
+                        </div>
+                        <div>
                           <div className="flex justify-between items-center mb-3"><h4>Selection</h4><span className="text-[10px] text-orange-500 px-2 py-0.5 bg-orange-950/20 rounded border border-orange-900/50 italic font-black uppercase">Select {CLASS_DATA[formData.className]?.skillCount}</span></div>
                           <div className="grid grid-cols-2 gap-3 text-zinc-900">
                              {ALL_SKILLS.map(s => {
@@ -602,8 +642,8 @@ const App = () => {
                                return (<button key={s.name} onClick={() => toggleSkillChoice(s.name)} disabled={isBgSkill} className={`p-3 rounded-xl border-2 text-[10px] transition-all flex items-center justify-between shadow-sm font-black italic uppercase ${isBgSkill ? 'border-orange-500/20 bg-zinc-900/40 text-orange-950 cursor-not-allowed opacity-40' : isSelected ? 'border-orange-500 bg-orange-500/10 text-white' : 'border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}><span>{s.name}</span>{isBgSkill ? <Lock size={12} /> : isSelected && <Check size={12} strokeWidth={4}/>}</button>);
                              })}
                           </div>
-                       </div>
-                       <div className="flex gap-4 pt-4 text-white"><button onClick={prevStep} className="flex-1 bg-zinc-800 py-4 rounded-xl hover:bg-zinc-700 transition-all font-black italic uppercase">Back</button><button onClick={nextStep} className="flex-1 bg-orange-600 py-4 rounded-xl hover:bg-orange-700 transition-all italic text-xl text-white font-black italic uppercase">Continue</button></div>
+                        </div>
+                        <div className="flex gap-4 pt-4 text-white"><button onClick={prevStep} className="flex-1 bg-zinc-800 py-4 rounded-xl hover:bg-zinc-700 transition-all font-black italic uppercase">Back</button><button onClick={nextStep} className="flex-1 bg-orange-600 py-4 rounded-xl hover:bg-orange-700 transition-all italic text-xl text-white font-black italic uppercase">Continue</button></div>
                     </div>
                   </ScreenWrapper>
                 )}
@@ -621,7 +661,7 @@ const App = () => {
                   </div>
                 )}
                 {step === 9 && (
-                   <ScreenWrapper title="Art Weaver" subtitle="Visual direction">
+                    <ScreenWrapper title="Art Weaver" subtitle="Visual direction">
                     {imageChoices.length > 0 && (<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 text-white font-black italic uppercase">{imageChoices.map((img, idx) => (<div key={idx} className="relative group"><img src={img} className="w-full rounded-2xl border-2 border-zinc-800 hover:border-orange-500 cursor-pointer aspect-square object-cover shadow-2xl" onClick={() => { setSelectedImage(img); setStep(10); }} alt="" /></div>))}</div>)}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="bg-zinc-900 p-6 rounded-3xl border-2 border-zinc-800 space-y-4 text-white text-left font-black italic uppercase">
